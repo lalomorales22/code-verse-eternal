@@ -1,0 +1,425 @@
+
+import React, { useState, useRef, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Brain, Code, Palette, Zap, Key, AlertCircle, Move, Wrench, Sparkles } from 'lucide-react';
+import aiService, { AIGenerationResponse } from '@/services/aiService';
+import toolSystem, { Tool } from '@/services/toolSystem';
+import { toast } from 'sonner';
+
+interface DraggableAIInterfaceProps {
+  onObjectGenerated: (code: string, metadata: any) => void;
+  onCodeModified: (code: string) => void;
+  onUIUpdated: (code: string) => void;
+  onToolCreated: (tool: Tool) => void;
+  sceneContext: any;
+}
+
+export default function DraggableAIInterface({ 
+  onObjectGenerated, 
+  onCodeModified, 
+  onUIUpdated,
+  onToolCreated,
+  sceneContext
+}: DraggableAIInterfaceProps) {
+  const [prompt, setPrompt] = useState('');
+  const [toolName, setToolName] = useState('');
+  const [toolDescription, setToolDescription] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [lastResponse, setLastResponse] = useState<AIGenerationResponse | null>(null);
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [position, setPosition] = useState({ x: 20, y: 100 });
+  const [tools, setTools] = useState<Tool[]>([]);
+  
+  const dragRef = useRef<HTMLDivElement>(null);
+  const dragOffset = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const savedKey = aiService.getApiKey();
+    if (savedKey) {
+      setApiKey(savedKey);
+      setHasApiKey(true);
+    }
+    setTools(toolSystem.getTools());
+  }, []);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!dragRef.current) return;
+    
+    const rect = dragRef.current.getBoundingClientRect();
+    dragOffset.current = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    };
+    setIsDragging(true);
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDragging) return;
+    
+    setPosition({
+      x: e.clientX - dragOffset.current.x,
+      y: e.clientY - dragOffset.current.y
+    });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging]);
+
+  const handleApiKeySubmit = () => {
+    if (apiKey.trim()) {
+      aiService.setApiKey(apiKey.trim());
+      setHasApiKey(true);
+      toast.success('xAI API key saved successfully!');
+    } else {
+      toast.error('Please enter a valid API key');
+    }
+  };
+
+  const handleCreateTool = async () => {
+    if (!hasApiKey || !toolName.trim() || !toolDescription.trim()) {
+      toast.error('Please provide tool name and description');
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const tool = await toolSystem.createTool(toolName, toolDescription, aiService);
+      setTools(toolSystem.getTools());
+      onToolCreated(tool);
+      toast.success(`Tool "${toolName}" created!`);
+      setToolName('');
+      setToolDescription('');
+    } catch (error) {
+      toast.error('Failed to create tool');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleExecuteTool = async (tool: Tool) => {
+    try {
+      await toolSystem.executeTool(tool.id, sceneContext);
+      toast.success(`Tool "${tool.name}" executed!`);
+    } catch (error) {
+      toast.error(`Tool execution failed: ${error.message}`);
+    }
+  };
+
+  const handleGenerate = async (type: 'object' | 'code' | 'ui' | 'self-modify' | 'creative') => {
+    if (!hasApiKey) {
+      toast.error('Please enter your xAI API key first');
+      return;
+    }
+
+    if (!prompt.trim() && type !== 'self-modify') {
+      toast.error('Please enter a prompt');
+      return;
+    }
+    
+    setIsGenerating(true);
+    try {
+      let response: AIGenerationResponse;
+      
+      switch (type) {
+        case 'creative':
+          const creativePrompt = `Create something completely unique and creative for a 3D canvas: ${prompt}. 
+          Be extremely creative - think outside the box. Create complex geometries, particle systems, 
+          interactive elements, or anything innovative. Use Three.js capabilities to the fullest.`;
+          response = await aiService.generateObject(creativePrompt);
+          if (response.success && response.code) {
+            onObjectGenerated(response.code, { ...response.metadata, type: 'ai_creative' });
+            toast.success('Creative object generated by Grok!');
+          }
+          break;
+        case 'object':
+          response = await aiService.generateObject(prompt);
+          if (response.success && response.code) {
+            onObjectGenerated(response.code, response.metadata);
+            toast.success('3D Object generated by Grok!');
+          }
+          break;
+        case 'code':
+          response = await aiService.modifyCode('', prompt);
+          if (response.success && response.code) {
+            onCodeModified(response.code);
+            toast.success('Code modified by Grok!');
+          }
+          break;
+        case 'ui':
+          response = await aiService.generateUI(prompt);
+          if (response.success && response.code) {
+            onUIUpdated(response.code);
+            toast.success('UI generated by Grok!');
+          }
+          break;
+        case 'self-modify':
+          response = await aiService.improveSelf();
+          toast.success('Grok analyzed the system!');
+          break;
+        default:
+          return;
+      }
+      
+      if (!response.success) {
+        toast.error(response.error || 'Generation failed');
+      }
+      
+      setLastResponse(response);
+      setPrompt('');
+    } catch (error) {
+      console.error('AI generation failed:', error);
+      toast.error('Failed to connect to xAI API. Check your API key.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  if (!hasApiKey) {
+    return (
+      <div 
+        ref={dragRef}
+        style={{ left: position.x, top: position.y }}
+        className="fixed z-40 w-80"
+      >
+        <Card className="bg-black/90 backdrop-blur-sm border-cyan-500/30">
+          <CardHeader 
+            className="cursor-move"
+            onMouseDown={handleMouseDown}
+          >
+            <CardTitle className="text-cyan-400 flex items-center gap-2">
+              <Key className="w-5 h-5" />
+              <Move className="w-4 h-4 opacity-50" />
+              xAI API Setup
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+              <AlertCircle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-yellow-300">
+                Get your API key from{' '}
+                <a 
+                  href="https://console.x.ai/" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="underline hover:text-yellow-200"
+                >
+                  console.x.ai
+                </a>
+              </div>
+            </div>
+            <div>
+              <label className="text-sm text-gray-400 mb-2 block">Enter your xAI API Key</label>
+              <Input
+                type="password"
+                placeholder="xai-..."
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                className="bg-gray-800 border-gray-600 text-white"
+              />
+            </div>
+            <Button
+              onClick={handleApiKeySubmit}
+              className="w-full bg-cyan-500 hover:bg-cyan-600 text-black"
+            >
+              Connect to Grok-3-Beta
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      ref={dragRef}
+      style={{ left: position.x, top: position.y }}
+      className="fixed z-40 w-80"
+    >
+      <Card className="bg-black/90 backdrop-blur-sm border-cyan-500/30">
+        <CardHeader 
+          className="cursor-move"
+          onMouseDown={handleMouseDown}
+        >
+          <CardTitle className="text-cyan-400 flex items-center gap-2">
+            <Brain className="w-5 h-5" />
+            <Move className="w-4 h-4 opacity-50" />
+            Grok-3-Beta Control
+          </CardTitle>
+          <div className="text-xs text-green-400">✓ Connected • Draggable</div>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="generate" className="w-full">
+            <TabsList className="grid w-full grid-cols-5 bg-gray-800">
+              <TabsTrigger value="generate" className="text-xs">
+                <Code className="w-4 h-4" />
+              </TabsTrigger>
+              <TabsTrigger value="creative" className="text-xs">
+                <Sparkles className="w-4 h-4" />
+              </TabsTrigger>
+              <TabsTrigger value="tools" className="text-xs">
+                <Wrench className="w-4 h-4" />
+              </TabsTrigger>
+              <TabsTrigger value="ui" className="text-xs">
+                <Palette className="w-4 h-4" />
+              </TabsTrigger>
+              <TabsTrigger value="self" className="text-xs">
+                <Brain className="w-4 h-4" />
+              </TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="generate" className="space-y-3">
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Generate 3D Object</label>
+                <Textarea
+                  placeholder="A floating crystal that pulses with energy..."
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  className="bg-gray-800 border-gray-600 text-white"
+                  rows={3}
+                />
+                <Button
+                  onClick={() => handleGenerate('object')}
+                  disabled={isGenerating}
+                  className="w-full mt-2 bg-cyan-500 hover:bg-cyan-600 text-black"
+                >
+                  {isGenerating ? 'Grok Thinking...' : 'Generate'}
+                </Button>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="creative" className="space-y-3">
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Creative Mode</label>
+                <Textarea
+                  placeholder="Something impossible and beautiful..."
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  className="bg-gray-800 border-gray-600 text-white"
+                  rows={3}
+                />
+                <Button
+                  onClick={() => handleGenerate('creative')}
+                  disabled={isGenerating}
+                  className="w-full mt-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white"
+                >
+                  {isGenerating ? 'Creating Magic...' : 'Create Anything'}
+                </Button>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="tools" className="space-y-3">
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Create Tool</label>
+                <Input
+                  placeholder="Tool name..."
+                  value={toolName}
+                  onChange={(e) => setToolName(e.target.value)}
+                  className="bg-gray-800 border-gray-600 text-white mb-2"
+                />
+                <Textarea
+                  placeholder="What should this tool do?"
+                  value={toolDescription}
+                  onChange={(e) => setToolDescription(e.target.value)}
+                  className="bg-gray-800 border-gray-600 text-white"
+                  rows={2}
+                />
+                <Button
+                  onClick={handleCreateTool}
+                  disabled={isGenerating}
+                  className="w-full mt-2 bg-orange-500 hover:bg-orange-600 text-white"
+                >
+                  {isGenerating ? 'Creating Tool...' : 'Create Tool'}
+                </Button>
+                
+                {tools.length > 0 && (
+                  <div className="mt-4 space-y-2 max-h-32 overflow-y-auto">
+                    <div className="text-xs text-gray-400">Available Tools:</div>
+                    {tools.map((tool) => (
+                      <Button
+                        key={tool.id}
+                        onClick={() => handleExecuteTool(tool)}
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs text-white border-gray-600"
+                      >
+                        {tool.name}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="ui" className="space-y-3">
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Generate UI</label>
+                <Textarea
+                  placeholder="A futuristic control panel..."
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  className="bg-gray-800 border-gray-600 text-white"
+                  rows={3}
+                />
+                <Button
+                  onClick={() => handleGenerate('ui')}
+                  disabled={isGenerating}
+                  className="w-full mt-2 bg-purple-500 hover:bg-purple-600 text-white"
+                >
+                  {isGenerating ? 'Grok Creating...' : 'Create UI'}
+                </Button>
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="self" className="space-y-3">
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Self-Analysis</label>
+                <p className="text-xs text-gray-500 mb-2">
+                  Grok will analyze and suggest improvements
+                </p>
+                <Button
+                  onClick={() => handleGenerate('self-modify')}
+                  disabled={isGenerating}
+                  className="w-full bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600 text-white"
+                >
+                  {isGenerating ? 'Grok Analyzing...' : 'Analyze System'}
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
+          
+          {lastResponse && (
+            <div className="mt-4 p-3 bg-gray-800 rounded-lg">
+              <div className="text-xs text-gray-400 mb-1">Grok Response:</div>
+              <div className="text-sm text-green-400">
+                {lastResponse.success ? '✓ Success' : '✗ Failed'}
+              </div>
+              {lastResponse.metadata && (
+                <div className="text-xs text-gray-500 mt-1 max-h-20 overflow-y-auto">
+                  {JSON.stringify(lastResponse.metadata, null, 2)}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Text } from '@react-three/drei';
 import { Vector3 } from 'three';
@@ -52,6 +52,21 @@ const ExecuteObjectCode = ({ object }: { object: CanvasObject }) => {
   }
 };
 
+// Enhanced object executor for AI-generated code
+const AIGeneratedObject = ({ object }: { object: CanvasObject }) => {
+  try {
+    if (object.code && object.metadata?.type === 'ai_generated_object') {
+      // Try to execute AI-generated Three.js code
+      const func = new Function('THREE', 'React', 'useFrame', object.code);
+      return func(window.THREE, React, useFrame) || null;
+    }
+    return <ExecuteObjectCode object={object} />;
+  } catch (error) {
+    console.error('Error executing AI object:', error);
+    return <ExecuteObjectCode object={object} />;
+  }
+};
+
 const FloatingControls = ({ onAddObject }: { onAddObject: () => void }) => {
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
@@ -102,9 +117,33 @@ const ObjectManager = ({
   );
 };
 
-export default function InfiniteCanvas() {
+const InfiniteCanvas = forwardRef<any, {}>((props, ref) => {
   const [objects, setObjects] = useState<CanvasObject[]>([]);
   const [selectedObject, setSelectedObject] = useState<string | null>(null);
+  const sceneRef = useRef<any>(null);
+
+  useImperativeHandle(ref, () => ({
+    addAIGeneratedObject: (code: string, metadata: any) => {
+      const newObject: CanvasObject = {
+        id: `ai_obj_${Date.now()}`,
+        type: metadata?.type || 'ai_generated',
+        position: [
+          (Math.random() - 0.5) * 20,
+          (Math.random() - 0.5) * 20,
+          (Math.random() - 0.5) * 20
+        ],
+        code,
+        props: metadata || {}
+      };
+      setObjects(prev => [...prev, newObject]);
+      console.log('Added AI-generated object:', newObject);
+    },
+    addObject: (object: any) => {
+      setObjects(prev => [...prev, object]);
+    },
+    getScene: () => sceneRef.current,
+    getObjects: () => objects
+  }));
 
   const addRandomObject = useCallback(() => {
     const types = ['cube', 'sphere', 'text'];
@@ -142,6 +181,7 @@ export default function InfiniteCanvas() {
     <div className="w-full h-screen bg-black relative overflow-hidden">
       {/* Three.js Canvas */}
       <Canvas
+        ref={sceneRef}
         camera={{ position: [10, 10, 10], fov: 75 }}
         style={{ background: 'radial-gradient(circle, #1a0033 0%, #000000 100%)' }}
       >
@@ -164,10 +204,14 @@ export default function InfiniteCanvas() {
           fadeStrength={1}
         />
 
-        {/* Render all objects */}
+        {/* Render all objects with enhanced AI support */}
         {objects.map((object) => (
           <group key={object.id}>
-            <ExecuteObjectCode object={object} />
+            {object.code && object.metadata?.type?.includes('ai') ? (
+              <AIGeneratedObject object={object} />
+            ) : (
+              <ExecuteObjectCode object={object} />
+            )}
           </group>
         ))}
 
@@ -192,10 +236,14 @@ export default function InfiniteCanvas() {
         onDeleteObject={deleteObject}
       />
 
-      {/* Header */}
+      {/* Enhanced Header */}
       <div className="fixed top-4 left-4 z-50">
-        <h1 className="text-2xl font-bold text-cyan-400 mb-1">AI Canvas</h1>
-        <p className="text-sm text-gray-400">Objects: {objects.length}</p>
+        <h1 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent mb-1">
+          AI Canvas Pro
+        </h1>
+        <p className="text-sm text-gray-400">
+          Objects: {objects.length} | AI-Generated: {objects.filter(obj => obj.metadata?.type?.includes('ai')).length}
+        </p>
       </div>
 
       {/* Status Bar */}
@@ -204,4 +252,8 @@ export default function InfiniteCanvas() {
       </div>
     </div>
   );
-}
+});
+
+InfiniteCanvas.displayName = 'InfiniteCanvas';
+
+export default InfiniteCanvas;
