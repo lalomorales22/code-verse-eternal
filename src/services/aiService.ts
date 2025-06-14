@@ -72,11 +72,37 @@ export class AIService {
       const messages = [
         {
           role: 'system',
-          content: 'You are an AI that generates Three.js code for 3D objects. Return only JavaScript code that creates a Three.js object with geometry, material, and optionally animation. Be creative and make visually interesting objects.'
+          content: `You are an AI that generates Three.js React components. Create a React functional component that renders a 3D object using @react-three/fiber.
+
+IMPORTANT RULES:
+1. DO NOT use any import statements
+2. Use only React, THREE (from window.THREE), and useFrame from the provided context
+3. Return ONLY a functional React component that can be rendered directly
+4. Use proper Three.js geometry and materials
+5. Make the object visually interesting with animations if appropriate
+6. The component should be self-contained
+
+Example format:
+function MyObject() {
+  const meshRef = React.useRef();
+  
+  useFrame((state) => {
+    if (meshRef.current) {
+      meshRef.current.rotation.x += 0.01;
+    }
+  });
+
+  return (
+    <mesh ref={meshRef} position={[0, 0, 0]}>
+      <boxGeometry args={[1, 1, 1]} />
+      <meshStandardMaterial color="#ff0000" />
+    </mesh>
+  );
+}`
         },
         {
           role: 'user',
-          content: `Generate Three.js code for: ${prompt}`
+          content: `Generate a Three.js React component for: ${prompt}`
         }
       ];
 

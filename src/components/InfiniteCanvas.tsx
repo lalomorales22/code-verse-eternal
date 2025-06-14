@@ -24,11 +24,56 @@ interface CanvasObject {
   metadata?: any;
 }
 
-// Dynamic code executor for AI-generated objects
+// Enhanced object executor for AI-generated code
+const AIGeneratedObject = ({ object }: { object: CanvasObject }) => {
+  try {
+    if (object.code && object.metadata?.type === 'ai_generated_object') {
+      console.log('Executing AI-generated object code:', object.code);
+      
+      // Make THREE available globally for the executed code
+      window.THREE = require('three');
+      
+      // Create a safe execution environment with React and useFrame
+      const func = new Function('React', 'useFrame', `
+        ${object.code}
+        
+        // Try to find the component function (look for function declarations)
+        const functionNames = ${object.code}.match(/function\\s+([A-Za-z][A-Za-z0-9]*)/g);
+        if (functionNames && functionNames.length > 0) {
+          const componentName = functionNames[0].replace('function ', '');
+          return eval(componentName);
+        }
+        
+        // Fallback: try to find arrow function or return statement
+        const lines = ${JSON.stringify(object.code)}.split('\\n');
+        for (let line of lines) {
+          if (line.includes('return (') || line.includes('return<')) {
+            return () => eval('(' + ${JSON.stringify(object.code)} + ')');
+          }
+        }
+        
+        return null;
+      `);
+      
+      const Component = func(React, useFrame);
+      
+      if (Component) {
+        return <Component />;
+      } else {
+        console.warn('Could not extract component from AI code');
+        return <ExecuteObjectCode object={object} />;
+      }
+    }
+    return <ExecuteObjectCode object={object} />;
+  } catch (error) {
+    console.error('Error executing AI object:', error);
+    return <ExecuteObjectCode object={object} />;
+  }
+};
+
+// Dynamic code executor for basic objects
 const ExecuteObjectCode = ({ object }: { object: CanvasObject }) => {
   try {
-    // This would be where AI-generated code gets executed
-    // For now, we'll render basic shapes based on type
     switch (object.type) {
       case 'cube':
         return (
@@ -60,25 +105,6 @@ const ExecuteObjectCode = ({ object }: { object: CanvasObject }) => {
   } catch (error) {
     console.error('Error executing object code:', error);
     return null;
-  }
-};
-
-// Enhanced object executor for AI-generated code
-const AIGeneratedObject = ({ object }: { object: CanvasObject }) => {
-  try {
-    if (object.code && object.metadata?.type === 'ai_generated_object') {
-      // Try to execute AI-generated Three.js code safely
-      const func = new Function('React', 'useFrame', 'THREE', `
-        ${object.code}
-        return Component;
-      `);
-      const Component = func(React, useFrame, window.THREE);
-      return Component ? <Component /> : <ExecuteObjectCode object={object} />;
-    }
-    return <ExecuteObjectCode object={object} />;
-  } catch (error) {
-    console.error('Error executing AI object:', error);
-    return <ExecuteObjectCode object={object} />;
   }
 };
 
@@ -191,8 +217,12 @@ const InfiniteCanvas = forwardRef<any, { onQuickCreate?: (prompt: string) => voi
         props: metadata || {},
         metadata
       };
-      setObjects(prev => [...prev, newObject]);
-      console.log('Added AI-generated object:', newObject);
+      setObjects(prev => {
+        const newObjects = [...prev, newObject];
+        console.log('Added AI-generated object:', newObject);
+        console.log('Total objects:', newObjects.length);
+        return newObjects;
+      });
     },
     addObject: (object: any) => {
       const objWithMetadata = { ...object, metadata: object.metadata || {} };
