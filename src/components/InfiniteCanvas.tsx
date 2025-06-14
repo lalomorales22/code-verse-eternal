@@ -1,4 +1,3 @@
-
 import React, { useRef, useState, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Text } from '@react-three/drei';
