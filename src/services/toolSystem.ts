@@ -36,12 +36,29 @@ export class ToolSystem {
     2. Return an object or perform the requested action
     3. Be creative and functional
     4. Handle Three.js objects, geometry, materials, animations, etc.
+    5. Use modern JavaScript/ES6+ syntax
     
     Example context usage:
     - context.addObject({ type: 'custom', geometry: myGeometry, material: myMaterial })
     - context.scene (Three.js scene reference)
+    - context.objects (current objects array)
     
-    Return only the function code.`;
+    Return ONLY the function code that can be executed with new Function().
+    
+    Example format:
+    function executeTool(context, parameters) {
+      // Your tool logic here
+      const newObject = {
+        id: 'tool_obj_' + Date.now(),
+        type: 'tool_generated',
+        position: [0, 0, 0],
+        code: '',
+        props: { color: '#ff0000' },
+        metadata: { type: 'tool_generated', tool: '${name}' }
+      };
+      context.addObject(newObject);
+      return { success: true, message: 'Tool executed successfully' };
+    }`;
 
     const response = await aiService.generateObject(toolPrompt);
     
@@ -70,9 +87,18 @@ export class ToolSystem {
     }
 
     try {
+      console.log('Executing tool:', tool.name);
+      console.log('Tool code:', tool.code);
+      
       // Create a safe execution environment
-      const func = new Function('context', 'parameters', tool.code);
-      return func(context, parameters);
+      const func = new Function('context', 'parameters', `
+        ${tool.code}
+        return executeTool(context, parameters);
+      `);
+      
+      const result = func(context, parameters);
+      console.log('Tool execution result:', result);
+      return result;
     } catch (error) {
       console.error('Tool execution error:', error);
       throw error;

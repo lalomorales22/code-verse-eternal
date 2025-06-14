@@ -2,7 +2,12 @@
 import React, { useState, useCallback, useRef } from 'react';
 import InfiniteCanvas from '@/components/InfiniteCanvas';
 import DraggableAIInterface from '@/components/DraggableAIInterface';
+import AIGeneratedUI from '@/components/AIGeneratedUI';
+import ToolsPanel from '@/components/ToolsPanel';
 import { Tool } from '@/services/toolSystem';
+import toolSystem from '@/services/toolSystem';
+import aiService from '@/services/aiService';
+import { toast } from 'sonner';
 
 const Index = () => {
   const [generatedObjects, setGeneratedObjects] = useState<any[]>([]);
@@ -20,18 +25,57 @@ const Index = () => {
     }
   }, []);
 
+  const handleQuickCreate = useCallback(async (prompt: string) => {
+    try {
+      const response = await aiService.generateObject(prompt);
+      if (response.success && response.code) {
+        handleObjectGenerated(response.code, response.metadata);
+        toast.success('Object created successfully!');
+      } else {
+        toast.error('Failed to create object');
+      }
+    } catch (error) {
+      toast.error('Error creating object');
+    }
+  }, [handleObjectGenerated]);
+
   const handleCodeModified = useCallback((code: string) => {
     console.log('Code modified by AI:', code);
+    // This could update the canvas or app behavior
+    toast.success('System code updated!');
   }, []);
 
   const handleUIUpdated = useCallback((code: string) => {
     console.log('UI updated by AI:', code);
     setUIComponents(prev => [...prev, code]);
+    toast.success('UI component generated!');
   }, []);
 
   const handleToolCreated = useCallback((tool: Tool) => {
     console.log('Tool created:', tool);
     setCreatedTools(prev => [...prev, tool]);
+    toast.success(`Tool "${tool.name}" created!`);
+  }, []);
+
+  const handleExecuteTool = useCallback(async (tool: Tool) => {
+    try {
+      await toolSystem.executeTool(tool.id, sceneContext);
+      toast.success(`Tool "${tool.name}" executed!`);
+    } catch (error) {
+      toast.error(`Tool execution failed: ${error.message}`);
+    }
+  }, []);
+
+  const handleDeleteTool = useCallback((toolId: string) => {
+    const success = toolSystem.deleteTool(toolId);
+    if (success) {
+      setCreatedTools(prev => prev.filter(tool => tool.id !== toolId));
+      toast.success('Tool deleted');
+    }
+  }, []);
+
+  const handleRemoveUIComponent = useCallback((index: number) => {
+    setUIComponents(prev => prev.filter((_, i) => i !== index));
   }, []);
 
   // Create scene context for tools
@@ -58,7 +102,7 @@ const Index = () => {
   return (
     <div className="relative w-full h-screen overflow-hidden">
       {/* Main 3D Canvas */}
-      <InfiniteCanvas ref={canvasRef} />
+      <InfiniteCanvas ref={canvasRef} onQuickCreate={handleQuickCreate} />
       
       {/* Draggable AI Interface */}
       <DraggableAIInterface
@@ -69,29 +113,18 @@ const Index = () => {
         sceneContext={sceneContext}
       />
 
-      {/* Dynamic UI Components rendered by AI */}
-      {uiComponents.length > 0 && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
-          <div className="bg-black/80 backdrop-blur-sm border border-purple-500/30 rounded-lg p-4">
-            <h3 className="text-purple-400 text-sm font-semibold mb-2">AI Generated UI</h3>
-            <div className="text-xs text-gray-400">
-              {uiComponents.length} component(s) generated
-            </div>
-          </div>
-        </div>
-      )}
+      {/* AI Generated UI Components */}
+      <AIGeneratedUI 
+        components={uiComponents}
+        onRemove={handleRemoveUIComponent}
+      />
 
-      {/* Tools Status */}
-      {createdTools.length > 0 && (
-        <div className="fixed top-20 right-4 z-50">
-          <div className="bg-black/80 backdrop-blur-sm border border-orange-500/30 rounded-lg p-3">
-            <h3 className="text-orange-400 text-sm font-semibold mb-1">Active Tools</h3>
-            <div className="text-xs text-gray-400">
-              {createdTools.length} tool(s) available
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Tools Panel */}
+      <ToolsPanel
+        tools={createdTools}
+        onExecuteTool={handleExecuteTool}
+        onDeleteTool={handleDeleteTool}
+      />
 
       {/* Enhanced Debug Info */}
       <div className="fixed bottom-20 left-4 z-50 text-xs text-gray-500 space-y-1">

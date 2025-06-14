@@ -1,9 +1,19 @@
+
 import React, { useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Text } from '@react-three/drei';
 import { Vector3 } from 'three';
 import { Plus, Trash2, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+
+// Declare THREE as global
+declare global {
+  interface Window {
+    THREE: any;
+  }
+}
 
 interface CanvasObject {
   id: string;
@@ -11,6 +21,7 @@ interface CanvasObject {
   position: [number, number, number];
   code: string;
   props: any;
+  metadata?: any;
 }
 
 // Dynamic code executor for AI-generated objects
@@ -56,9 +67,13 @@ const ExecuteObjectCode = ({ object }: { object: CanvasObject }) => {
 const AIGeneratedObject = ({ object }: { object: CanvasObject }) => {
   try {
     if (object.code && object.metadata?.type === 'ai_generated_object') {
-      // Try to execute AI-generated Three.js code
-      const func = new Function('THREE', 'React', 'useFrame', object.code);
-      return func(window.THREE, React, useFrame) || null;
+      // Try to execute AI-generated Three.js code safely
+      const func = new Function('React', 'useFrame', 'THREE', `
+        ${object.code}
+        return Component;
+      `);
+      const Component = func(React, useFrame, window.THREE);
+      return Component ? <Component /> : <ExecuteObjectCode object={object} />;
     }
     return <ExecuteObjectCode object={object} />;
   } catch (error) {
@@ -67,16 +82,53 @@ const AIGeneratedObject = ({ object }: { object: CanvasObject }) => {
   }
 };
 
-const FloatingControls = ({ onAddObject }: { onAddObject: () => void }) => {
+const QuickAddDialog = ({ onAddObject }: { onAddObject: (prompt: string) => void }) => {
+  const [prompt, setPrompt] = useState('');
+  const [open, setOpen] = useState(false);
+
+  const handleSubmit = () => {
+    if (prompt.trim()) {
+      onAddObject(prompt);
+      setPrompt('');
+      setOpen(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          className="w-12 h-12 rounded-full bg-cyan-500 hover:bg-cyan-600 text-black"
+          size="icon"
+        >
+          <Plus className="w-6 h-6" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="bg-black/90 backdrop-blur-sm border-cyan-500/30">
+        <DialogHeader>
+          <DialogTitle className="text-cyan-400">Create Something</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <Input
+            placeholder="Describe what you want to create..."
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            className="bg-gray-800 border-gray-600 text-white"
+            onKeyPress={(e) => e.key === 'Enter' && handleSubmit()}
+          />
+          <Button onClick={handleSubmit} className="w-full bg-cyan-500 hover:bg-cyan-600 text-black">
+            Create with AI
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const FloatingControls = ({ onAddObject }: { onAddObject: (prompt: string) => void }) => {
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
-      <Button
-        onClick={onAddObject}
-        className="w-12 h-12 rounded-full bg-cyan-500 hover:bg-cyan-600 text-black"
-        size="icon"
-      >
-        <Plus className="w-6 h-6" />
-      </Button>
+      <QuickAddDialog onAddObject={onAddObject} />
     </div>
   );
 };
@@ -112,12 +164,15 @@ const ObjectManager = ({
       <div className="text-sm text-gray-300">
         <p>Position: {object.position.join(', ')}</p>
         <p>Type: {object.type}</p>
+        {object.metadata && (
+          <p>Source: {object.metadata.type || 'Manual'}</p>
+        )}
       </div>
     </div>
   );
 };
 
-const InfiniteCanvas = forwardRef<any, {}>((props, ref) => {
+const InfiniteCanvas = forwardRef<any, { onQuickCreate?: (prompt: string) => void }>((props, ref) => {
   const [objects, setObjects] = useState<CanvasObject[]>([]);
   const [selectedObject, setSelectedObject] = useState<string | null>(null);
   const sceneRef = useRef<any>(null);
@@ -133,13 +188,15 @@ const InfiniteCanvas = forwardRef<any, {}>((props, ref) => {
           (Math.random() - 0.5) * 20
         ],
         code,
-        props: metadata || {}
+        props: metadata || {},
+        metadata
       };
       setObjects(prev => [...prev, newObject]);
       console.log('Added AI-generated object:', newObject);
     },
     addObject: (object: any) => {
-      setObjects(prev => [...prev, object]);
+      const objWithMetadata = { ...object, metadata: object.metadata || {} };
+      setObjects(prev => [...prev, objWithMetadata]);
     },
     getScene: () => sceneRef.current,
     getObjects: () => objects
@@ -157,16 +214,23 @@ const InfiniteCanvas = forwardRef<any, {}>((props, ref) => {
         (Math.random() - 0.5) * 20,
         (Math.random() - 0.5) * 20
       ],
-      code: '', // This will be AI-generated code
+      code: '',
       props: {
         color: colors[Math.floor(Math.random() * colors.length)],
         text: 'AI Generated Object'
-      }
+      },
+      metadata: { type: 'manual' }
     };
 
     setObjects(prev => [...prev, newObject]);
     console.log('Added new object:', newObject);
   }, []);
+
+  const handleQuickCreate = useCallback((prompt: string) => {
+    if (props.onQuickCreate) {
+      props.onQuickCreate(prompt);
+    }
+  }, [props.onQuickCreate]);
 
   const deleteObject = useCallback((id: string) => {
     setObjects(prev => prev.filter(obj => obj.id !== id));
@@ -227,7 +291,7 @@ const InfiniteCanvas = forwardRef<any, {}>((props, ref) => {
       </Canvas>
 
       {/* UI Overlay */}
-      <FloatingControls onAddObject={addRandomObject} />
+      <FloatingControls onAddObject={handleQuickCreate} />
       
       <ObjectManager
         objects={objects}
