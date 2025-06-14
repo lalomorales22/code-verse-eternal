@@ -13,9 +13,10 @@ export interface AIGenerationResponse {
   metadata?: any;
 }
 
-// Mock AI service - this would connect to actual AI APIs
+// xAI API service for grok-3-beta integration
 export class AIService {
   private static instance: AIService;
+  private apiKey: string | null = null;
   
   static getInstance(): AIService {
     if (!AIService.instance) {
@@ -24,103 +25,190 @@ export class AIService {
     return AIService.instance;
   }
 
+  setApiKey(key: string) {
+    this.apiKey = key;
+    // Store in localStorage for persistence
+    localStorage.setItem('xai_api_key', key);
+  }
+
+  getApiKey(): string | null {
+    if (!this.apiKey) {
+      this.apiKey = localStorage.getItem('xai_api_key');
+    }
+    return this.apiKey;
+  }
+
+  private async callXAI(messages: any[]): Promise<any> {
+    const apiKey = this.getApiKey();
+    if (!apiKey) {
+      throw new Error('xAI API key not set. Please enter your API key.');
+    }
+
+    const response = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'grok-3-beta',
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 2000,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`xAI API error: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
   async generateObject(prompt: string): Promise<AIGenerationResponse> {
-    // This would call actual AI APIs (OpenAI, Claude, etc.)
     console.log('AI generating object for prompt:', prompt);
     
-    // Mock response - in real implementation, this would be AI-generated
-    const mockCode = `
-// AI Generated Object
-const aiObject = {
-  type: 'custom',
-  geometry: new THREE.BoxGeometry(1, 1, 1),
-  material: new THREE.MeshStandardMaterial({ 
-    color: '#${Math.floor(Math.random()*16777215).toString(16)}',
-    metalness: 0.5,
-    roughness: 0.2
-  }),
-  animation: (mesh, time) => {
-    mesh.rotation.x = time * 0.01;
-    mesh.rotation.y = time * 0.02;
-    mesh.position.y = Math.sin(time * 0.01) * 0.5;
-  }
-};
-`;
+    try {
+      const messages = [
+        {
+          role: 'system',
+          content: 'You are an AI that generates Three.js code for 3D objects. Return only JavaScript code that creates a Three.js object with geometry, material, and optionally animation. Be creative and make visually interesting objects.'
+        },
+        {
+          role: 'user',
+          content: `Generate Three.js code for: ${prompt}`
+        }
+      ];
 
-    return {
-      success: true,
-      code: mockCode,
-      metadata: {
-        type: 'animated_cube',
-        complexity: 'medium',
-        features: ['animation', 'random_color', 'floating']
-      }
-    };
+      const response = await this.callXAI(messages);
+      const generatedCode = response.choices[0]?.message?.content || '';
+
+      return {
+        success: true,
+        code: generatedCode,
+        metadata: {
+          type: 'ai_generated_object',
+          complexity: 'dynamic',
+          features: ['ai_generated', 'three_js', 'grok_powered'],
+          prompt: prompt
+        }
+      };
+    } catch (error) {
+      console.error('Error generating object:', error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
   }
 
   async modifyCode(currentCode: string, modification: string): Promise<AIGenerationResponse> {
     console.log('AI modifying code:', { currentCode, modification });
     
-    // Mock self-modification capability
-    const modifiedCode = currentCode + '\n// AI Modified: ' + modification;
-    
-    return {
-      success: true,
-      code: modifiedCode,
-      metadata: {
-        modifications: [modification],
-        timestamp: Date.now()
-      }
-    };
+    try {
+      const messages = [
+        {
+          role: 'system',
+          content: 'You are an AI that modifies and improves code. Take the existing code and apply the requested modifications. Return only the modified code.'
+        },
+        {
+          role: 'user',
+          content: `Current code:\n${currentCode}\n\nModification request: ${modification}\n\nReturn the modified code:`
+        }
+      ];
+
+      const response = await this.callXAI(messages);
+      const modifiedCode = response.choices[0]?.message?.content || '';
+
+      return {
+        success: true,
+        code: modifiedCode,
+        metadata: {
+          modifications: [modification],
+          timestamp: Date.now(),
+          original_length: currentCode.length,
+          new_length: modifiedCode.length
+        }
+      };
+    } catch (error) {
+      console.error('Error modifying code:', error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
   }
 
   async generateUI(description: string): Promise<AIGenerationResponse> {
     console.log('AI generating UI for:', description);
     
-    // Mock UI generation
-    const uiCode = `
-// AI Generated UI Component
-const GeneratedUI = () => {
-  return (
-    <div className="bg-gradient-to-r from-purple-500 to-cyan-500 p-4 rounded-lg">
-      <h2 className="text-white font-bold">${description}</h2>
-      <button className="mt-2 px-4 py-2 bg-white text-black rounded hover:bg-gray-200">
-        AI Action
-      </button>
-    </div>
-  );
-};
-`;
+    try {
+      const messages = [
+        {
+          role: 'system',
+          content: 'You are an AI that generates React UI components using Tailwind CSS. Create beautiful, functional components. Return only JSX/React code.'
+        },
+        {
+          role: 'user',
+          content: `Generate a React component for: ${description}`
+        }
+      ];
 
-    return {
-      success: true,
-      code: uiCode,
-      metadata: {
-        component: 'GeneratedUI',
-        type: 'functional_component'
-      }
-    };
+      const response = await this.callXAI(messages);
+      const uiCode = response.choices[0]?.message?.content || '';
+
+      return {
+        success: true,
+        code: uiCode,
+        metadata: {
+          component: 'AIGeneratedUI',
+          type: 'react_component',
+          description: description
+        }
+      };
+    } catch (error) {
+      console.error('Error generating UI:', error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
   }
 
   async improveSelf(): Promise<AIGenerationResponse> {
     console.log('AI attempting self-improvement...');
     
-    // This is where the AI would analyze its own code and suggest improvements
-    const improvements = [
-      'Optimize rendering performance',
-      'Add new object types',
-      'Improve user interface',
-      'Enhance AI capabilities'
-    ];
-    
-    return {
-      success: true,
-      code: '// Self-improvement suggestions implemented',
-      metadata: {
-        improvements,
-        confidence: 0.85
-      }
-    };
+    try {
+      const messages = [
+        {
+          role: 'system',
+          content: 'You are an AI that can analyze and improve code systems. Suggest specific improvements for a 3D canvas application with AI-generated content.'
+        },
+        {
+          role: 'user',
+          content: 'Analyze this 3D canvas application and suggest improvements for better performance, user experience, and AI capabilities.'
+        }
+      ];
+
+      const response = await this.callXAI(messages);
+      const improvements = response.choices[0]?.message?.content || '';
+
+      return {
+        success: true,
+        code: improvements,
+        metadata: {
+          improvements: improvements.split('\n').filter(line => line.trim()),
+          confidence: 0.9,
+          model: 'grok-3-beta'
+        }
+      };
+    } catch (error) {
+      console.error('Error in self-improvement:', error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
   }
 }
 
