@@ -1,8 +1,8 @@
-
 import React, { useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Text } from '@react-three/drei';
 import { Vector3 } from 'three';
+import * as THREE from 'three';
 import { Plus, Trash2, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,25 +31,17 @@ const AIGeneratedObject = ({ object }: { object: CanvasObject }) => {
       console.log('Executing AI-generated object code:', object.code);
       
       // Make THREE available globally for the executed code
-      window.THREE = require('three');
+      window.THREE = THREE;
       
       // Create a safe execution environment with React and useFrame
       const func = new Function('React', 'useFrame', `
         ${object.code}
         
         // Try to find the component function (look for function declarations)
-        const functionNames = ${object.code}.match(/function\\s+([A-Za-z][A-Za-z0-9]*)/g);
-        if (functionNames && functionNames.length > 0) {
-          const componentName = functionNames[0].replace('function ', '');
+        const functionMatch = ${JSON.stringify(object.code)}.match(/function\\s+([A-Za-z][A-Za-z0-9]*)/);
+        if (functionMatch && functionMatch[1]) {
+          const componentName = functionMatch[1];
           return eval(componentName);
-        }
-        
-        // Fallback: try to find arrow function or return statement
-        const lines = ${JSON.stringify(object.code)}.split('\\n');
-        for (let line of lines) {
-          if (line.includes('return (') || line.includes('return<')) {
-            return () => eval('(' + ${JSON.stringify(object.code)} + ')');
-          }
         }
         
         return null;
@@ -58,9 +50,10 @@ const AIGeneratedObject = ({ object }: { object: CanvasObject }) => {
       const Component = func(React, useFrame);
       
       if (Component) {
+        console.log('Successfully created AI component, rendering...');
         return <Component />;
       } else {
-        console.warn('Could not extract component from AI code');
+        console.warn('Could not extract component from AI code, falling back...');
         return <ExecuteObjectCode object={object} />;
       }
     }
