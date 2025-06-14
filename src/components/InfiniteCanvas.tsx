@@ -1,3 +1,4 @@
+
 import React, { useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Text } from '@react-three/drei';
@@ -34,24 +35,58 @@ const AIGeneratedObject = ({ object }: { object: CanvasObject }) => {
       window.THREE = THREE;
       
       // Create a safe execution environment with React and useFrame
-      const func = new Function('React', 'useFrame', `
-        ${object.code}
-        
-        // Try to find the component function (look for function declarations)
-        const functionMatch = ${JSON.stringify(object.code)}.match(/function\\s+([A-Za-z][A-Za-z0-9]*)/);
-        if (functionMatch && functionMatch[1]) {
-          const componentName = functionMatch[1];
-          return eval(componentName);
+      const executeCode = () => {
+        try {
+          // Create a function that returns the component
+          const componentCode = `
+            (function() {
+              ${object.code}
+              
+              // Try to find and return the component function
+              const functionMatch = \`${object.code}\`.match(/function\\s+([A-Za-z][A-Za-z0-9]*)/);
+              if (functionMatch && functionMatch[1]) {
+                const componentName = functionMatch[1];
+                try {
+                  return eval(componentName);
+                } catch (e) {
+                  console.error('Error evaluating component:', e);
+                  return null;
+                }
+              }
+              
+              // Try to find arrow function component
+              const arrowMatch = \`${object.code}\`.match(/const\\s+([A-Za-z][A-Za-z0-9]*)\\s*=\\s*\\(/);
+              if (arrowMatch && arrowMatch[1]) {
+                const componentName = arrowMatch[1];
+                try {
+                  return eval(componentName);
+                } catch (e) {
+                  console.error('Error evaluating arrow component:', e);
+                  return null;
+                }
+              }
+              
+              return null;
+            })()
+          `;
+          
+          const Component = eval(componentCode);
+          return Component;
+        } catch (error) {
+          console.error('Error executing AI code:', error);
+          return null;
         }
-        
-        return null;
-      `);
+      };
       
-      const Component = func(React, useFrame);
+      const Component = executeCode();
       
       if (Component) {
-        console.log('Successfully created AI component, rendering...');
-        return <Component />;
+        console.log('Successfully created AI component, rendering at position:', object.position);
+        return (
+          <group position={object.position}>
+            <Component />
+          </group>
+        );
       } else {
         console.warn('Could not extract component from AI code, falling back...');
         return <ExecuteObjectCode object={object} />;
@@ -93,6 +128,15 @@ const ExecuteObjectCode = ({ object }: { object: CanvasObject }) => {
           </Text>
         );
       default:
+        // For AI generated objects without recognized type, try to render them
+        if (object.metadata?.type === 'ai_generated_object') {
+          return (
+            <mesh position={object.position}>
+              <boxGeometry args={[1, 1, 1]} />
+              <meshStandardMaterial color="#ff0088" />
+            </mesh>
+          );
+        }
         return null;
     }
   } catch (error) {
@@ -198,9 +242,12 @@ const InfiniteCanvas = forwardRef<any, { onQuickCreate?: (prompt: string) => voi
 
   useImperativeHandle(ref, () => ({
     addAIGeneratedObject: (code: string, metadata: any) => {
+      console.log('Adding AI-generated object with code:', code);
+      console.log('Metadata:', metadata);
+      
       const newObject: CanvasObject = {
         id: `ai_obj_${Date.now()}`,
-        type: metadata?.type || 'ai_generated',
+        type: 'ai_generated',
         position: [
           (Math.random() - 0.5) * 20,
           (Math.random() - 0.5) * 20,
@@ -208,12 +255,16 @@ const InfiniteCanvas = forwardRef<any, { onQuickCreate?: (prompt: string) => voi
         ],
         code,
         props: metadata || {},
-        metadata
+        metadata: {
+          ...metadata,
+          type: 'ai_generated_object'
+        }
       };
+      
       setObjects(prev => {
         const newObjects = [...prev, newObject];
-        console.log('Added AI-generated object:', newObject);
-        console.log('Total objects:', newObjects.length);
+        console.log('Canvas objects updated. Total objects:', newObjects.length);
+        console.log('New object added:', newObject);
         return newObjects;
       });
     },
@@ -292,15 +343,18 @@ const InfiniteCanvas = forwardRef<any, { onQuickCreate?: (prompt: string) => voi
         />
 
         {/* Render all objects with enhanced AI support */}
-        {objects.map((object) => (
-          <group key={object.id}>
-            {object.code && object.metadata?.type?.includes('ai') ? (
-              <AIGeneratedObject object={object} />
-            ) : (
-              <ExecuteObjectCode object={object} />
-            )}
-          </group>
-        ))}
+        {objects.map((object) => {
+          console.log('Rendering object:', object.id, object.type, object.metadata?.type);
+          return (
+            <group key={object.id}>
+              {object.code && object.metadata?.type === 'ai_generated_object' ? (
+                <AIGeneratedObject object={object} />
+              ) : (
+                <ExecuteObjectCode object={object} />
+              )}
+            </group>
+          );
+        })}
 
         {/* Camera Controls */}
         <OrbitControls
@@ -329,7 +383,7 @@ const InfiniteCanvas = forwardRef<any, { onQuickCreate?: (prompt: string) => voi
           AI Canvas Pro
         </h1>
         <p className="text-sm text-gray-400">
-          Objects: {objects.length} | AI-Generated: {objects.filter(obj => obj.metadata?.type?.includes('ai')).length}
+          Objects: {objects.length} | AI-Generated: {objects.filter(obj => obj.metadata?.type === 'ai_generated_object').length}
         </p>
       </div>
 

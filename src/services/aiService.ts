@@ -72,42 +72,47 @@ export class AIService {
       const messages = [
         {
           role: 'system',
-          content: `You are an AI that generates Three.js React components. Create a React functional component that renders a 3D object using @react-three/fiber.
+          content: `You are an AI that generates Three.js React components for a 3D canvas. Create a React functional component that renders a 3D object using @react-three/fiber.
 
-IMPORTANT RULES:
-1. DO NOT use any import statements
-2. Use only React, THREE (from window.THREE), and useFrame from the provided context
-3. Return ONLY a functional React component that can be rendered directly
+CRITICAL RULES:
+1. DO NOT use any import statements at all
+2. Use only React, THREE (available as window.THREE), and useFrame from the provided context
+3. Return ONLY a complete functional React component
 4. Use proper Three.js geometry and materials
-5. Make the object visually interesting with animations if appropriate
-6. The component should be self-contained
+5. Make objects visually interesting with animations, colors, and effects
+6. The component must be self-contained and executable
 
-Example format:
+REQUIRED FORMAT - Your response must contain a complete function like this:
 function MyObject() {
   const meshRef = React.useRef();
   
   useFrame((state) => {
     if (meshRef.current) {
       meshRef.current.rotation.x += 0.01;
+      meshRef.current.rotation.y += 0.01;
     }
   });
 
   return (
-    <mesh ref={meshRef} position={[0, 0, 0]}>
+    <mesh ref={meshRef}>
       <boxGeometry args={[1, 1, 1]} />
       <meshStandardMaterial color="#ff0000" />
     </mesh>
   );
-}`
+}
+
+Make it creative and unique based on the user's prompt. Use colors, animations, and interesting geometries.`
         },
         {
           role: 'user',
-          content: `Generate a Three.js React component for: ${prompt}`
+          content: `Create a Three.js React component for: ${prompt}`
         }
       ];
 
       const response = await this.callXAI(messages);
       const generatedCode = response.choices[0]?.message?.content || '';
+
+      console.log('Generated code from AI:', generatedCode);
 
       return {
         success: true,
@@ -116,7 +121,8 @@ function MyObject() {
           type: 'ai_generated_object',
           complexity: 'dynamic',
           features: ['ai_generated', 'three_js', 'grok_powered'],
-          prompt: prompt
+          prompt: prompt,
+          timestamp: Date.now()
         }
       };
     } catch (error) {
